@@ -93,6 +93,17 @@ static inline bool CheckCurlTLSCertificateChain(const curl_tlssessioninfo *infor
 }
 
 #if LIBCURL_VERSION_NUM >= 0x075000
+static inline bool CurlSchemeEquals(const char *value, const char *expected)
+{
+    if (value == NULL || expected == NULL) return false;
+    while (*value && *expected) {
+        unsigned char character = static_cast<unsigned char>(*value++);
+        if (character >= 'A' && character <= 'Z') character += 'a' - 'A';
+        if (character != static_cast<unsigned char>(*expected++)) return false;
+    }
+    return *value == '\0' && *expected == '\0';
+}
+
 static inline int CheckCurlPeerBeforeRequest(void *userData, char *, char *, int, int)
 {
     CURL *handle = static_cast<CURL *>(userData);
@@ -102,8 +113,8 @@ static inline int CheckCurlPeerBeforeRequest(void *userData, char *, char *, int
         return CURL_PREREQFUNC_ABORT;
     // Preserve explicitly configured plaintext HTTP CalDAV accounts. HTTPS
     // must expose a verified chain before any request headers or body are sent.
-    if (std::strcmp(scheme, "http") == 0) return CURL_PREREQFUNC_OK;
-    if (std::strcmp(scheme, "https") != 0) return CURL_PREREQFUNC_ABORT;
+    if (CurlSchemeEquals(scheme, "http")) return CURL_PREREQFUNC_OK;
+    if (!CurlSchemeEquals(scheme, "https")) return CURL_PREREQFUNC_ABORT;
     curl_tlssessioninfo *information = NULL;
     if (curl_easy_getinfo(handle, CURLINFO_TLS_SSL_PTR, &information) != CURLE_OK)
         return CURL_PREREQFUNC_ABORT;
