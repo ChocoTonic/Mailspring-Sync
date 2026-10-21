@@ -38,6 +38,7 @@ jobs:
       # Cache packages installed by MSBuild's vcpkg manifest mode
       # MSBuild with VcpkgEnableManifest=true installs to vcpkg_installed/ next to vcpkg.json
       - name: Restore vcpkg packages cache
+        id: vcpkg-cache
         uses: actions/cache@v6
         with:
           path: vcpkg_installed
@@ -64,6 +65,13 @@ jobs:
           cd Windows
           REM VcpkgEnableManifest=true tells MSBuild to install packages from vcpkg.json to vcpkg_installed/
           msbuild.exe mailsync.sln /property:Configuration=Release;Platform=Win32 /p:VcpkgEnableManifest=true
+
+      - name: Preserve installed dependencies after compiler or linker failures
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true' && hashFiles('vcpkg_installed/**/vcpkg/status') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: vcpkg_installed
+          key: vcpkg-msbuild-x86-windows-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlay-ports/**') }}
 
       - name: Copy build artifacts and dependencies
         shell: pwsh
@@ -119,13 +127,6 @@ jobs:
             exit 1
           }
 
-          # vcpkg's zlib provides zlib1.dll but the import library causes dependents to look for zlib.dll
-          # This is a known vcpkg issue - copy zlib1.dll to zlib.dll as a workaround
-          if (Test-Path "..\app\dist\zlib1.dll") {
-            Copy-Item "..\app\dist\zlib1.dll" "..\app\dist\zlib.dll" -Force
-            Write-Host "Copied zlib1.dll to zlib.dll (vcpkg naming workaround)"
-          }
-
       - name: List build artifacts
         shell: pwsh
         run: |
@@ -139,8 +140,7 @@ jobs:
             "libssl-3.dll",
             "libcurl.dll",
             "libxml2.dll",
-            "zlib1.dll",
-            "zlib.dll",
+            "z.dll",
             "tidy.dll",
             "libctemplate.dll",
             "pthreadVC3.dll",
