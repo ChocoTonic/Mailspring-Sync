@@ -18,6 +18,10 @@ enum CertificateKeyStatus { KeyAllowed, KeyBlocked, KeyInvalid };
 // Electron PR 55126. Key-based blocking also catches cross-signed certificates.
 // https://bugzilla.mozilla.org/show_bug.cgi?id=2083449
 static const char * const blockedPublicKeyHashes[] = {
+#ifdef MAILCORE_TEST_BLOCKED_SPKI
+    // A compile-time-only test key exercises rejection before HTTP credentials.
+    MAILCORE_TEST_BLOCKED_SPKI,
+#endif
     "49dd353dc2b919a3770645117d0e60c16115e7d1bc259eefe734b00ea434fe5f",
     "5c0660a2b164910d8ff589c18e14552e9e0ec237dcefe2cb736d41a4811f81a0",
     "63ecefee431d49523bc1136c4e72d0206a477086caf606cd5cf025686c109cf8",

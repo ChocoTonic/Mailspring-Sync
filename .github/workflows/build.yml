@@ -20,7 +20,7 @@ jobs:
           - os: ubuntu-24.04-arm
             artifact_name: mailsync-linux-arm64
             s3_dir: linux-arm64
-          - os: macos-latest
+          - os: macos-15
             artifact_name: mailsync-macos
             s3_dir: osx
 
@@ -123,6 +123,13 @@ jobs:
         if: success() && (github.ref == 'refs/heads/master') && github.repository == 'Foundry376/Mailspring-Sync'
         run: |
           aws s3 sync ../app/dist s3://mailspring-builds/mailsync/${GITHUB_SHA:0:8}/${{ matrix.s3_dir }}/ --delete
+
+      - name: Execute extracted artifact offline
+        run: |
+          mkdir -p "$RUNNER_TEMP/mailspring-artifact"
+          tar -xzf ../app/dist/mailsync.tar.gz -C "$RUNNER_TEMP/mailspring-artifact"
+          cd "$RUNNER_TEMP/mailspring-artifact"
+          ./mailsync --help
 
       - name: Copy native artifact for upload
         run: cp ../app/dist/mailsync.tar.gz ./mailsync.tar.gz

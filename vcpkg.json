@@ -7,7 +7,8 @@
     "openssl",
     {
       "name": "curl",
-      "features": ["ssl"]
+      "default-features": false,
+      "features": ["openssl"]
     },
     "libxml2",
     "zlib",

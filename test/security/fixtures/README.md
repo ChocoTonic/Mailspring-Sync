@@ -11,3 +11,12 @@ unrelated P-256 certificates created only for this regression test. Their
 private key was discarded. They exercise a healthy DNS/IP server certificate,
 a legacy v1 certificate without an explicit version field, and rejection of a
 client-only extended key usage respectively.
+
+The `curl-*.pem` files are unrelated, test-only localhost TLS certificates and
+two corresponding server private keys. Their CA private key was discarded.
+These keys are public test fixtures, never production credentials. A separate
+test executable adds the localhost server SPKI hash to its compile-time
+blocklist to verify that the real libcurl callback rejects the connection before
+any HTTP headers or test credentials are transmitted. Production builds do not
+define that test-only hash. The test also covers reused connections, redirects,
+untrusted certificates, and explicitly configured plaintext HTTP.

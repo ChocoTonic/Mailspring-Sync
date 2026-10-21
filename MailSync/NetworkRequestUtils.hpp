@@ -25,6 +25,8 @@ size_t _onAppendToString(void *contents, size_t length, size_t nmemb, void *user
 
 // Helper to cleanup curl handle and associated header list stored in CURLOPT_PRIVATE
 void CleanupCurlRequest(CURL * curl_handle);
+CURL * CreateSecureCurlHandle();
+bool InitializeSecureCurl();
 
 CURL * CreateJSONRequest(string url, string method = "GET", string authorization = "", const char * payloadChars = nullptr);
 CURL * CreateCalDavRequest(string url, string method = "GET", const char * payloadChars = nullptr);

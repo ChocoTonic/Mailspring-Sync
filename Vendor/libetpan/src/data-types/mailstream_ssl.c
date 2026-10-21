@@ -503,6 +503,14 @@ static struct mailstream_ssl_data * ssl_data_new_full(int fd, time_t timeout,
     goto err;
   }
 
+  /* MailCore verifies the peer after this initial handshake. Do not allow a
+   * subsequent renegotiation to replace that already checked certificate. */
+#ifdef SSL_OP_NO_RENEGOTIATION
+  SSL_CTX_set_options(tmp_ctx, SSL_OP_NO_RENEGOTIATION);
+#else
+  goto free_ctx; /* Older OpenSSL cannot enforce this security requirement. */
+#endif
+
 #ifdef WIN32
   /* Disable TLS session tickets on Windows. In TLS 1.3, the server sends
    * NewSessionTicket messages after the handshake completes, which OpenSSL

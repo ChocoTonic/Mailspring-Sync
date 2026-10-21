@@ -42,6 +42,7 @@ jobs:
         with:
           path: vcpkg_installed
           key: vcpkg-msbuild-x86-windows-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlay-ports/**') }}
+          restore-keys: vcpkg-msbuild-x86-windows-
 
       - name: Set commit hash
         shell: pwsh
@@ -168,6 +169,17 @@ jobs:
           cd Windows
           REM SASL plugin DLLs (saslPLAIN.dll, etc.) are now in dist alongside other DLLs
           7z -ttar a dummy ..\..\app\dist\*.dll ..\..\app\dist\*.pdb ..\..\app\dist\mailsync.exe -so | 7z -si -tgzip a .\mailsync.tar.gz
+
+      - name: Execute extracted artifact offline
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path extracted-mailspring | Out-Null
+          tar -xzf Windows/mailsync.tar.gz -C extracted-mailspring
+          Push-Location extracted-mailspring
+          try {
+            & ./mailsync.exe --help
+            if ($LASTEXITCODE -ne 0) { throw "Extracted mailsync failed: $LASTEXITCODE" }
+          } finally { Pop-Location }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
