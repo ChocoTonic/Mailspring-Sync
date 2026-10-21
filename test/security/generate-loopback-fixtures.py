@@ -42,7 +42,7 @@ def find_openssl():
     raise RuntimeError("OpenSSL CLI not found; set OPENSSL_EXECUTABLE to its executable")
 
 
-def generate_fixtures(source, destination=None):
+def generate_fixtures(source, destination=None, crl_url=None):
     """Return a fixture directory; caller removes it when destination is omitted.
 
     Fixed leaf keys preserve the SPKI values used by the denied-key test binary.
@@ -90,18 +90,60 @@ authorityKeyIdentifier = keyid,issuer
         run("req", "-new", "-x509", "-sha256", "-days", "398",
             "-key", work / "ca-key.pem", "-subj", "/CN=Mailspring ephemeral loopback CA",
             "-config", config, "-extensions", "ca", "-out", work / "curl-ca.pem")
-        for serial, name in enumerate(("curl-server", "curl-redirect"), start=2):
-            shutil.copyfile(source / (name + "-key.pem"), work / (name + "-key.pem"))
+        names = ("curl-server", "curl-redirect", "curl-revoked", "curl-unavailable")
+        for serial, name in enumerate(names, start=2):
+            if name in names[:2]:
+                shutil.copyfile(source / (name + "-key.pem"), work / (name + "-key.pem"))
+            else:
+                run("genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                    "-out", work / (name + "-key.pem"))
+            issuer = "curl-ca"
+            issuer_key = work / "ca-key.pem"
+            if name == "curl-unavailable":
+                # A distinct issuer prevents a cached healthy-issuer CRL from
+                # making the unavailable-CRL negative case falsely pass.
+                issuer = "unavailable-ca"
+                issuer_key = work / "unavailable-ca-key.pem"
+                run("genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                    "-out", issuer_key)
+                run("req", "-new", "-x509", "-sha256", "-days", "398",
+                    "-key", issuer_key, "-subj", "/CN=Mailspring unavailable CRL CA",
+                    "-config", config, "-extensions", "ca", "-out", work / (issuer + ".pem"))
+            extension = work / (name + ".cnf")
+            extension.write_text(config.read_text(encoding="ascii") +
+                                 ("crlDistributionPoints = URI:" + crl_url.rsplit("/", 1)[0] +
+                                  ("/unavailable.crl\n" if name == "curl-unavailable" else "/healthy.crl\n")
+                                  if crl_url else ""), encoding="ascii")
             run("req", "-new", "-sha256", "-key", work / (name + "-key.pem"),
                 "-config", config, "-out", work / (name + ".csr"))
             run("x509", "-req", "-sha256", "-days", "397",
-                "-in", work / (name + ".csr"), "-CA", work / "curl-ca.pem",
-                "-CAkey", work / "ca-key.pem", "-set_serial", str(serial),
-                "-extfile", config, "-extensions", "server", "-out", work / (name + ".pem"))
-            run("verify", "-CAfile", work / "curl-ca.pem", "-purpose", "sslserver",
+                "-in", work / (name + ".csr"), "-CA", work / (issuer + ".pem"),
+                "-CAkey", issuer_key, "-set_serial", str(serial),
+                "-extfile", extension, "-extensions", "server", "-out", work / (name + ".pem"))
+            run("verify", "-CAfile", work / (issuer + ".pem"), "-purpose", "sslserver",
                 "-verify_hostname", "mail.example.test", work / (name + ".pem"))
-        for name in ("curl-ca.pem", "curl-server.pem", "curl-server-key.pem",
-                     "curl-redirect.pem", "curl-redirect-key.pem"):
+        (work / "index.txt").write_text("", encoding="ascii")
+        ca_config = work / "ca.cnf"
+        ca_config.write_text("[ca]\ndefault_ca=issuer\n[issuer]\n" +
+                             f"database={work.as_posix()}/index.txt\n" +
+                             f"private_key={work.as_posix()}/ca-key.pem\n" +
+                             f"certificate={work.as_posix()}/curl-ca.pem\n" +
+                             "default_md=sha256\ndefault_crl_days=7\n", encoding="ascii")
+        run("ca", "-config", ca_config, "-revoke", work / "curl-revoked.pem", "-batch")
+        run("ca", "-config", ca_config, "-gencrl", "-out", work / "healthy-crl.pem", "-batch")
+        run("crl", "-in", work / "healthy-crl.pem", "-outform", "DER", "-out", work / "healthy.crl")
+        run("crl", "-in", work / "healthy-crl.pem", "-verify", "-CAfile", work / "curl-ca.pem", "-noout")
+        run("verify", "-CAfile", work / "curl-ca.pem", "-CRLfile", work / "healthy-crl.pem",
+            "-crl_check", work / "curl-server.pem", work / "curl-redirect.pem")
+        revoked = subprocess.run([openssl, "verify", "-CAfile", str(work / "curl-ca.pem"),
+                                  "-CRLfile", str(work / "healthy-crl.pem"), "-crl_check",
+                                  str(work / "curl-revoked.pem")], capture_output=True)
+        if revoked.returncode == 0 or b"certificate revoked" not in revoked.stderr.lower():
+            raise RuntimeError("Revoked fixture was not rejected by OpenSSL CRL validation")
+        with (work / "curl-ca.pem").open("ab") as bundle:
+            bundle.write((work / "unavailable-ca.pem").read_bytes())
+        for name in ("curl-ca.pem", "healthy.crl", "healthy-crl.pem", *(
+                name + suffix for name in names for suffix in (".pem", "-key.pem"))):
             shutil.copyfile(work / name, destination / name)
     return destination
 
@@ -110,5 +152,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="Directory containing fixed test private keys")
     parser.add_argument("destination", type=Path, nargs="?")
+    parser.add_argument("--crl-url", help="Loopback HTTP CRL URL (healthy.crl)")
     args = parser.parse_args()
-    print(generate_fixtures(args.source, args.destination))
+    print(generate_fixtures(args.source, args.destination, args.crl_url))

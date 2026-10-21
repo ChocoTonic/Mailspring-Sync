@@ -11,9 +11,31 @@ import threading
 normal, denied, fixture_dir, openssl = sys.argv[1:]
 temporary = tempfile.TemporaryDirectory(prefix="mailspring-loopback-certificates-")
 fixtures = pathlib.Path(temporary.name)
+class CRLHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Separate server/log: revocation metadata is never an application
+        # credential request, and must not affect credential-leak assertions.
+        if self.path == "/healthy.crl":
+            data = (fixtures / "healthy.crl").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pkix-crl")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        else:
+            self.send_error(404)
+
+    def log_message(self, *_):
+        pass
+
+
+crl_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), CRLHandler)
 generator_environment = dict(os.environ, OPENSSL_EXECUTABLE=openssl)
 subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name("generate-loopback-fixtures.py")),
-                fixture_dir, str(fixtures)], check=True, env=generator_environment)
+                fixture_dir, str(fixtures), "--crl-url",
+                f"http://127.0.0.1:{crl_server.server_port}/healthy.crl"],
+               check=True, env=generator_environment)
+threading.Thread(target=crl_server.serve_forever, daemon=True).start()
 requests = []
 
 
@@ -55,6 +77,10 @@ def server(kind, certificate=None):
 primary = server("primary", "curl-server")
 redirect = server("redirect", "curl-redirect")
 plaintext = server("plaintext")
+revocation_peers = []
+if sys.platform == "win32":
+    revocation_peers = [server("revoked", "curl-revoked"),
+                        server("unavailable-crl", "curl-unavailable")]
 environment = {key: value for key, value in os.environ.items()
                if key.lower() not in {"https_proxy", "http_proxy", "all_proxy"}}
 ca = str(fixtures / "curl-ca.pem")
@@ -78,13 +104,19 @@ try:
     run(normal, f"https://127.0.0.1:{redirect.server_port}/redirect", ca, "allow")
     run(denied, f"http://127.0.0.1:{plaintext.server_port}/explicit-http", ca, "allow")
     assert sum(row[0] == "plaintext" for row in requests) == 2
+    if sys.platform == "win32":
+        before = len(requests)
+        for peer in revocation_peers:
+            run(normal, f"https://127.0.0.1:{peer.server_port}/{peer.kind}", ca, "deny")
+        assert len(requests) == before, "Credentials reached a revoked or revocation-unknown peer"
+        print("Windows revoked and unavailable-CRL peers rejected before credentials")
     if sys.platform == "darwin":
         for name in ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"]:
             configured = dict(environment, **{name: "hTtPs://unused.invalid:443"})
             run(normal, origin, ca, "configure-denied", configured)
     print("Healthy/reused HTTPS, untrusted and blocked peers, redirects and explicit HTTP passed")
 finally:
-    for instance in [primary, redirect, plaintext]:
+    for instance in [primary, redirect, plaintext, crl_server, *revocation_peers]:
         instance.shutdown()
         instance.server_close()
     temporary.cleanup()

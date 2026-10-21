@@ -12,6 +12,9 @@
 #if !defined(__APPLE__)
 #include <openssl/ssl.h>
 #endif
+#if defined(_WIN32)
+#include "MCWindowsRevocation.h"
+#endif
 
 #if !defined(__APPLE__)
 static inline bool CurlUsesCompatibleOpenSSL()
@@ -45,9 +48,15 @@ static inline bool CheckCurlOpenSSLChain(STACK_OF(X509) *chain)
 static inline int VerifyCurlOpenSSLChain(X509_STORE_CTX *context, void *)
 {
     if (X509_verify_cert(context) != 1) return 0;
-    if (CheckCurlOpenSSLChain(X509_STORE_CTX_get0_chain(context))) return 1;
-    X509_STORE_CTX_set_error(context, X509_V_ERR_CERT_REVOKED);
-    return 0;
+    if (!CheckCurlOpenSSLChain(X509_STORE_CTX_get0_chain(context))) {
+        X509_STORE_CTX_set_error(context, X509_V_ERR_CERT_REVOKED);
+        return 0;
+    }
+#if defined(_WIN32)
+    // Preserve Schannel's native revocation policy when using OpenSSL curl.
+    if (!NativeWindowsRevocationCheck(context)) return 0;
+#endif
+    return 1;
 }
 
 static inline CURLcode ConfigureCurlOpenSSLContext(CURL *, void *context, void *)
