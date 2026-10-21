@@ -38,6 +38,7 @@
 #endif
 
 #include "mailimap.h"
+#include "../../data-types/mailsasl_security.h"
 #include "mailimap_parser.h"
 #include "mailimap_sender.h"
 #include "mailimap_extension.h"
@@ -1719,7 +1720,9 @@ int mailimap_authenticate(mailimap * session, const char * auth_type,
   sasl_secret_t * secret;
   int res;
   size_t len;
-  
+
+  if (!mailsasl_mechanism_allowed(auth_type)) return MAILIMAP_ERROR_LOGIN;
+
   if (session->imap_state != MAILIMAP_STATE_NON_AUTHENTICATED) {
     res = MAILIMAP_ERROR_BAD_STATE;
     goto err;

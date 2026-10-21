@@ -7,11 +7,13 @@
 //
 
 #include "MCCertificateUtils.h"
+#include "MCBlockedPublicKeys.h"
 
 #if __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
 #else
+#include "MCOpenSSLPeerIdentity.h"
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -59,8 +61,17 @@ bool mailcore::checkCertificate(mailstream *stream, String *hostname)
     {
         MMAPString *str;
         str = (MMAPString *)carray_get(cCerts, i);
+        if (str == NULL || security::checkCertificatePublicKey(
+                reinterpret_cast<const unsigned char *>(str->str), str->len) != security::KeyAllowed) {
+            MCLog("Certificate rejected: compromised public key or invalid certificate encoding");
+            goto free_certs;
+        }
         CFDataRef data = CFDataCreate(NULL, (const UInt8 *)str->str, (CFIndex)str->len);
         SecCertificateRef cert = SecCertificateCreateWithData(NULL, data);
+        if (cert == NULL) {
+            CFRelease(data);
+            goto free_certs;
+        }
         CFArrayAppendValue(certificates, cert);
         CFRelease(data);
         CFRelease(cert);
@@ -85,6 +96,22 @@ bool mailcore::checkCertificate(mailstream *stream, String *hostname)
         goto free_certs;
     }
 
+    // Include certificates selected from the system store, not just those sent
+    // by the peer. A cross-sign or locally trusted intermediate must not bypass
+    // the compromised-key blocklist.
+    for (CFIndex i = 0; i < SecTrustGetCertificateCount(trust); ++i) {
+        SecCertificateRef cert = SecTrustGetCertificateAtIndex(trust, i);
+        CFDataRef data = cert == NULL ? NULL : SecCertificateCopyData(cert);
+        security::CertificateKeyStatus keyStatus = data == NULL ? security::KeyInvalid :
+            security::checkCertificatePublicKey(CFDataGetBytePtr(data), CFDataGetLength(data));
+        if (data != NULL) CFRelease(data);
+        if (keyStatus != security::KeyAllowed) {
+            MCLog("Certificate rejected: compromised public key or invalid certificate encoding");
+            pthread_mutex_unlock(&lock);
+            goto free_certs;
+        }
+    }
+
     pthread_mutex_unlock(&lock);
 
     switch (trustResult)
@@ -100,8 +127,8 @@ bool mailcore::checkCertificate(mailstream *stream, String *hostname)
         break;
     }
 
-    CFRelease(trust);
 free_certs:
+    if (trust != NULL) CFRelease(trust);
     CFRelease(certificates);
     mailstream_certificate_chain_free(cCerts);
     CFRelease(policy);
@@ -267,6 +294,11 @@ err:
             MCLog("Could not read carray_get cert");
             goto free_certs;
         }
+        if (security::checkCertificatePublicKey(
+                reinterpret_cast<const unsigned char *>(str->str), str->len) != security::KeyAllowed) {
+            MCLog("Certificate rejected: compromised public key or invalid certificate encoding");
+            goto free_certs;
+        }
         BIO *bio = BIO_new_mem_buf((void *)str->str, str->len);
         X509 *certificate = d2i_X509_bio(bio, NULL);
         BIO_free(bio);
@@ -294,9 +326,27 @@ err:
         goto free_certs;
     }
 
+    if (hostname == NULL || !security::setCertificatePeerIdentity(storectx, MCUTF8(hostname))) {
+        MCLog("Could not configure the expected TLS peer hostname");
+        goto free_certs;
+    }
+
     status = X509_verify_cert(storectx);
     if (status == 1)
     {
+        STACK_OF(X509) *verifiedChain = X509_STORE_CTX_get_chain(storectx);
+        if (verifiedChain == NULL) goto free_certs;
+        for (int i = 0; i < sk_X509_num(verifiedChain); ++i) {
+            unsigned char *der = NULL;
+            int derLength = i2d_X509(sk_X509_value(verifiedChain, i), &der);
+            security::CertificateKeyStatus keyStatus = derLength <= 0 ? security::KeyInvalid :
+                security::checkCertificatePublicKey(der, static_cast<std::size_t>(derLength));
+            OPENSSL_free(der);
+            if (keyStatus != security::KeyAllowed) {
+                MCLog("Certificate rejected: compromised public key or invalid certificate encoding");
+                goto free_certs;
+            }
+        }
         result = true;
     }
     else

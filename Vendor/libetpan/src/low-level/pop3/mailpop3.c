@@ -47,6 +47,7 @@
 #endif
 
 #include "mailpop3.h"
+#include "../../data-types/mailsasl_security.h"
 #include <stdio.h>
 #include <string.h>
 #include "md5.h"
@@ -1476,7 +1477,9 @@ int mailpop3_auth(mailpop3 * f, const char * auth_type,
   char * encoded;
   unsigned int encoded_len;
   unsigned int max_encoded;
-  
+
+  if (!mailsasl_mechanism_allowed(auth_type)) return MAILPOP3_ERROR_UNAUTHORIZED;
+
   sasl_callback[0].id = SASL_CB_GETREALM;
   sasl_callback[0].proc =  (int(*)(void)) sasl_getrealm;
   sasl_callback[0].context = f;

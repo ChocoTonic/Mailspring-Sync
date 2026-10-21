@@ -933,7 +933,10 @@ string exectuablePath = argv[0];
 
     if (mode == "install-check") {
         // setup curl for install check
-        curl_global_init(CURL_GLOBAL_ALL);
+        if (!InitializeSecureCurl()) {
+            cerr << "Unable to initialize secure TLS certificate verification" << endl;
+            return 1;
+        }
         return runInstallCheck();
     }
 
@@ -1044,7 +1047,10 @@ string exectuablePath = argv[0];
     }
 
     // setup curl
-    curl_global_init(CURL_GLOBAL_ALL);
+    if (!InitializeSecureCurl()) {
+        cerr << "Unable to initialize secure TLS certificate verification" << endl;
+        return 1;
+    }
 
     if (mode == "test") {
         return runTestAuthReportingExceptions(account);

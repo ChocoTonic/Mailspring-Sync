@@ -1,7 +1,7 @@
 {
   "name": "cyrus-sasl",
   "version": "2.1.28",
-  "port-version": 100,
+  "port-version": 101,
   "description": "Cyrus SASL without GSSAPI/Kerberos (for x86-windows compatibility)",
   "homepage": "https://github.com/cyrusimap/cyrus-sasl",
   "license": null,
