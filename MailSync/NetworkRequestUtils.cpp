@@ -38,7 +38,7 @@ CURL * CreateSecureCurlHandle() {
     if (!ConfigureCurlCertificateSecurity(handle)) {
         if (handle != nullptr) curl_easy_cleanup(handle);
         throw SyncException(CURLE_NOT_BUILT_IN,
-                            "TLS key verification requires libcurl 7.80 or newer with a supported TLS backend");
+                            "TLS key verification requires libcurl 7.80 or newer with a supported TLS backend; HTTPS proxies are unsupported on macOS");
     }
     return handle;
 }
