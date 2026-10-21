@@ -132,6 +132,13 @@ static inline bool ConfigureCurlCertificateSecurity(CURL *handle)
     if (!CurlUsesCompatibleOpenSSL() ||
         curl_easy_setopt(handle, CURLOPT_SSL_CTX_FUNCTION, ConfigureCurlOpenSSLContext) != CURLE_OK)
         return false;
+#if defined(_WIN32)
+    // OpenSSL does not inherit Schannel's Windows trust-store integration.
+    // Keep native roots for both origin and HTTPS-proxy TLS verification.
+    if (curl_easy_setopt(handle, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_NATIVE_CA)) != CURLE_OK ||
+        curl_easy_setopt(handle, CURLOPT_PROXY_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_NATIVE_CA)) != CURLE_OK)
+        return false;
+#endif
 #else
     // A TLS proxy can send CONNECT authentication before the origin pre-request
     // callback. SecureTransport exposes no pre-handshake verification hook, so

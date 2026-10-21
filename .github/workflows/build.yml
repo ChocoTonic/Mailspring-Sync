@@ -20,7 +20,7 @@ jobs:
           - os: ubuntu-24.04-arm
             artifact_name: mailsync-linux-arm64
             s3_dir: linux-arm64
-          - os: macos-15
+          - os: macos-15-intel
             artifact_name: mailsync-macos
             s3_dir: osx
 
