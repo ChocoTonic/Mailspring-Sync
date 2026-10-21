@@ -90,8 +90,9 @@ static inline bool NativeWindowsRevocationCheck(X509_STORE_CTX *context)
     CERT_CHAIN_ENGINE_CONFIG configuration = {};
     configuration.cbSize = sizeof(configuration);
     configuration.hExclusiveRoot = resources.anchors;
-    configuration.hRestrictedOther = resources.certificates;
+#if defined(NTDDI_VERSION) && defined(NTDDI_WIN8) && NTDDI_VERSION >= NTDDI_WIN8
     configuration.dwExclusiveFlags = CERT_CHAIN_EXCLUSIVE_ENABLE_CA_FLAG;
+#endif
     configuration.dwUrlRetrievalTimeout = 15000;
     if (!CertCreateCertificateChainEngine(&configuration, &resources.engine))
         return NativeWindowsRevocationFailure(context, 0);
@@ -102,7 +103,6 @@ static inline bool NativeWindowsRevocationCheck(X509_STORE_CTX *context)
     parameters.RequestedUsage.dwType = USAGE_MATCH_TYPE_AND;
     parameters.RequestedUsage.Usage.cUsageIdentifier = 1;
     parameters.RequestedUsage.Usage.rgpszUsageIdentifier = &serverAuth;
-    parameters.dwUrlRetrievalTimeout = 15000;
     if (!CertGetCertificateChain(resources.engine, resources.peer, NULL, resources.certificates,
                                  &parameters, CERT_CHAIN_REVOCATION_CHECK_CHAIN |
                                  CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
