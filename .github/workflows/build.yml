@@ -129,7 +129,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/mailspring-artifact"
           tar -xzf ../app/dist/mailsync.tar.gz -C "$RUNNER_TEMP/mailspring-artifact"
           cd "$RUNNER_TEMP/mailspring-artifact"
-          ./mailsync --help
+          EXECUTABLE="$RUNNER_TEMP/mailspring-artifact/mailsync"
+          "$EXECUTABLE" --help
+          mkdir -p "$RUNNER_TEMP/mailspring-database"
+          for attempt in 1 2; do
+            CONFIG_DIR_PATH="$RUNNER_TEMP/mailspring-database" IDENTITY_SERVER=https://unused.invalid "$EXECUTABLE" --mode migrate
+          done
 
       - name: Copy native artifact for upload
         run: cp ../app/dist/mailsync.tar.gz ./mailsync.tar.gz

@@ -4,14 +4,24 @@
   "version": "1.0.0",
   "description": "Native sync engine for Mailspring email client",
   "dependencies": [
-    "openssl",
+    {
+      "name": "openssl",
+      "version>=": "3.6.5"
+    },
     {
       "name": "curl",
+      "version>=": "8.23.0",
       "default-features": false,
       "features": ["openssl"]
     },
-    "libxml2",
-    "zlib",
+    {
+      "name": "libxml2",
+      "version>=": "2.15.4"
+    },
+    {
+      "name": "zlib",
+      "version>=": "1.3.2"
+    },
     "icu",
     "libiconv",
     "tidy-html5",

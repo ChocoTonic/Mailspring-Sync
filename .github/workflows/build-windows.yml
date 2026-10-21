@@ -26,7 +26,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '84bab45d415d22042bd0b9081aea57f362da3f35'
+          vcpkgGitCommitId: '03863b71384819cbb223c09f535bbe60a3b3e082'
           # Don't run vcpkg install here - let MSBuild handle it with manifest mode
           runVcpkgInstall: false
           # Disable deprecated x-gha binary caching (was removed from vcpkg)
@@ -110,10 +110,10 @@ jobs:
           }
 
           # Verify vcpkg auto-deployed the DLLs - fail if not
-          $testDll = "..\app\dist\icuuc78.dll"
-          if (!(Test-Path $testDll)) {
+          $icuRuntime = Get-ChildItem -LiteralPath "..\app\dist" -Filter "icuuc*.dll" -File
+          if (!$icuRuntime) {
             Write-Host "ERROR: vcpkg did not auto-deploy DLLs to build output!"
-            Write-Host "Expected to find: $testDll"
+            Write-Host "Expected to find an ICU common runtime DLL (icuuc*.dll)"
             Write-Host "Contents of Windows\Release:"
             Get-ChildItem ".\Windows\Release\*" -ErrorAction SilentlyContinue | Select-Object Name
             exit 1
@@ -177,8 +177,16 @@ jobs:
           tar -xzf Windows/mailsync.tar.gz -C extracted-mailspring
           Push-Location extracted-mailspring
           try {
-            & ./mailsync.exe --help
+            $executable = Join-Path (Get-Location) mailsync.exe
+            & $executable --help
             if ($LASTEXITCODE -ne 0) { throw "Extracted mailsync failed: $LASTEXITCODE" }
+            $env:CONFIG_DIR_PATH = Join-Path $env:RUNNER_TEMP mailspring-database
+            $env:IDENTITY_SERVER = "https://unused.invalid"
+            New-Item -ItemType Directory -Force -Path $env:CONFIG_DIR_PATH | Out-Null
+            foreach ($attempt in 1..2) {
+              & $executable --mode migrate
+              if ($LASTEXITCODE -ne 0) { throw "Offline database migration failed: $LASTEXITCODE" }
+            }
           } finally { Pop-Location }
 
       - name: Upload build artifacts

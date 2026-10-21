@@ -29,11 +29,21 @@ jobs:
         run: |
           SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
           cmake -S test/security -B security-build -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" -DCURL_NO_CURL_CMAKE=ON -DCURL_LIBRARY="$SDKROOT/usr/lib/libcurl.tbd" -DCURL_INCLUDE_DIR="$SDKROOT/usr/include"
+      - name: Set up pinned vcpkg for Windows security tests
+        if: runner.os == 'Windows'
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: '${{ runner.temp }}/security-vcpkg'
+          vcpkgGitCommitId: '03863b71384819cbb223c09f535bbe60a3b3e082'
+          runVcpkgInstall: false
+          doNotCache: true
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          vcpkg install openssl:x64-windows "curl[core,openssl]:x64-windows" --classic
-          cmake -S test/security -B security-build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_TARGET_TRIPLET=x64-windows
+          $securityVcpkg = '${{ runner.temp }}/security-vcpkg'
+          & "$securityVcpkg/vcpkg.exe" install "openssl[core,tools]:x64-windows" "curl[core,openssl]:x64-windows" --classic
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake -S test/security -B security-build -DCMAKE_TOOLCHAIN_FILE="$securityVcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_TARGET_TRIPLET=x64-windows
       - run: cmake --build security-build --config Release
       - run: ctest --test-dir security-build -C Release --output-on-failure

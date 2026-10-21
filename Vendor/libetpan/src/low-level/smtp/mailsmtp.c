@@ -40,6 +40,7 @@
 #endif
 
 #include "mailsmtp.h"
+#include "../../data-types/mailsasl_security.h"
 #include "mailsmtp_private.h"
 #include "connect.h"
 #include "base64.h"
@@ -1529,7 +1530,9 @@ int mailesmtp_auth_sasl(mailsmtp * session, const char * auth_type,
   char * encoded;
   unsigned int encoded_len;
   unsigned int max_encoded;
-  
+
+  if (!mailsasl_mechanism_allowed(auth_type)) return MAILSMTP_ERROR_AUTH_NOT_SUPPORTED;
+
   sasl_callback[0].id = SASL_CB_GETREALM;
   sasl_callback[0].proc =  (int(*)(void)) sasl_getrealm;
   sasl_callback[0].context = session;
