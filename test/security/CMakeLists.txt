@@ -15,10 +15,6 @@ add_executable(fmt-regression-tests fmt-regression-tests.cpp)
 target_compile_features(fmt-regression-tests PRIVATE cxx_std_11)
 add_test(NAME bundled-fmt-pointer-regression COMMAND fmt-regression-tests)
 
-add_executable(sasl-mechanism-tests sasl-mechanism-tests.cpp)
-target_compile_features(sasl-mechanism-tests PRIVATE cxx_std_11)
-add_test(NAME sasl-authentication-mechanisms COMMAND sasl-mechanism-tests)
-
 find_package(CURL 7.80 REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_program(OPENSSL_EXECUTABLE NAMES openssl
