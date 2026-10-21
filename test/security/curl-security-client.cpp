@@ -45,6 +45,8 @@ int main(int argc, char **argv)
         return 4;
     }
     curl_easy_setopt(handle, CURLOPT_PREREQFUNCTION, diagnosePeer);
+    char errorBuffer[CURL_ERROR_SIZE] = {0};
+    curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, errorBuffer);
     curl_easy_setopt(handle, CURLOPT_URL, argv[1]);
     curl_easy_setopt(handle, CURLOPT_PROXY, "");
     curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
@@ -63,7 +65,8 @@ int main(int argc, char **argv)
             break;
         }
         if (code != CURLE_OK) {
-            std::cerr << "HTTPS request failed: " << curl_easy_strerror(code) << '\n';
+            std::cerr << "HTTPS request failed: " << curl_easy_strerror(code)
+                      << ": " << errorBuffer << '\n';
             result = 6;
             break;
         }
