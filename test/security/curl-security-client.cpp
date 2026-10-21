@@ -4,6 +4,30 @@
 
 static size_t discard(char *, size_t size, size_t count, void *) { return size * count; }
 
+static int diagnosePeer(void *data, char *primary, char *local, int remotePort, int localPort)
+{
+    int result = CheckCurlPeerBeforeRequest(data, primary, local, remotePort, localPort);
+    if (result != CURL_PREREQFUNC_OK) {
+        CURL *handle = static_cast<CURL *>(data);
+        char *scheme = NULL;
+        curl_tlssessioninfo *tls = NULL;
+        CURLcode schemeResult = curl_easy_getinfo(handle, CURLINFO_SCHEME, &scheme);
+        CURLcode tlsResult = curl_easy_getinfo(handle, CURLINFO_TLS_SSL_PTR, &tls);
+        std::cerr << "Rejected peer: schemeResult=" << schemeResult << " scheme="
+                  << (scheme ? scheme : "null") << " tlsResult=" << tlsResult
+                  << " backend=" << (tls ? static_cast<int>(tls->backend) : -1)
+                  << " internals=" << (tls ? tls->internals : NULL) << '\n';
+#if !defined(__APPLE__)
+        if (tls && tls->internals && tls->backend == CURLSSLBACKEND_OPENSSL && CurlUsesCompatibleOpenSSL()) {
+            SSL *ssl = static_cast<SSL *>(tls->internals);
+            std::cerr << "OpenSSL verify=" << SSL_get_verify_result(ssl)
+                      << " chain=" << SSL_get0_verified_chain(ssl) << '\n';
+        }
+#endif
+    }
+    return result;
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 4 || !InitializeCurlCertificateSecurity()) return 2;
@@ -20,6 +44,7 @@ int main(int argc, char **argv)
         curl_easy_cleanup(handle);
         return 4;
     }
+    curl_easy_setopt(handle, CURLOPT_PREREQFUNCTION, diagnosePeer);
     curl_easy_setopt(handle, CURLOPT_URL, argv[1]);
     curl_easy_setopt(handle, CURLOPT_PROXY, "");
     curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
