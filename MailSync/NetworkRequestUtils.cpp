@@ -14,6 +14,7 @@
 #include "SyncException.hpp"
 #include "Account.hpp"
 #include "MailUtils.hpp"
+#include "CurlCertificateSecurity.hpp"
 
 #include <sys/stat.h>
 #include <vector>
@@ -27,6 +28,20 @@ struct CurlRequestData {
 
     CurlRequestData() : headers(nullptr) {}
 };
+
+bool InitializeSecureCurl() {
+    return InitializeCurlCertificateSecurity();
+}
+
+CURL * CreateSecureCurlHandle() {
+    CURL *handle = curl_easy_init();
+    if (!ConfigureCurlCertificateSecurity(handle)) {
+        if (handle != nullptr) curl_easy_cleanup(handle);
+        throw SyncException(CURLE_NOT_BUILT_IN,
+                            "TLS key verification requires libcurl 7.80 or newer with a supported TLS backend; HTTPS proxies are unsupported on macOS");
+    }
+    return handle;
+}
 
 // Helper to properly cleanup a curl handle including headers stored in private data
 void CleanupCurlRequest(CURL * curl_handle) {
@@ -57,7 +72,7 @@ size_t _onAppendToString(void *contents, size_t length, size_t nmemb, void *user
 }
 
 const json MakeOAuthRefreshRequest(string provider, string clientId, string refreshToken) {
-    CURL * curl_handle = curl_easy_init();
+    CURL * curl_handle = CreateSecureCurlHandle();
     const char * url =
           provider == "gmail" ? "https://www.googleapis.com/oauth2/v4/token"
         : provider == "office365" ? "https://login.microsoftonline.com/common/oauth2/v2.0/token"
@@ -103,7 +118,7 @@ const json MakeOAuthRefreshRequest(string provider, string clientId, string refr
 }
 
 CURL * CreateJSONRequest(string url, string method, string authorization, const char * payloadChars) {
-    CURL * curl_handle = curl_easy_init();
+    CURL * curl_handle = CreateSecureCurlHandle();
     curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl_handle, CURLOPT_CONNECTTIMEOUT, 20);
 
@@ -137,7 +152,7 @@ const string PerformRequest(CURL * curl_handle) {
 
 
 const string PerformExpectedRedirect(string url) {
-    CURL * curl_handle = curl_easy_init();
+    CURL * curl_handle = CreateSecureCurlHandle();
     curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl_handle, CURLOPT_CONNECTTIMEOUT, 10);
 

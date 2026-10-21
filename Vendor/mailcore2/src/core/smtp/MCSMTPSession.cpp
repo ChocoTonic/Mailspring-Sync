@@ -611,8 +611,11 @@ void SMTPSession::login(ErrorCode * pError)
         // https://docs.kolab.org/administrator-guide/md5-sasl-mechs.html
         // https://tools.ietf.org/html/rfc2195
 
+        // Do not let rejecting DIGEST-MD5 reach the default PLAIN case below.
+        // Fail closed where this mechanism would previously have been selected.
         else if (mSmtp->auth & MAILSMTP_AUTH_DIGEST_MD5) {
-            setAuthType((AuthType) (authType() | AuthTypeSASLDIGESTMD5));
+            *pError = ErrorAuthentication;
+            return;
         }
         else if (mSmtp->auth & MAILSMTP_AUTH_CRAM_MD5) {
             setAuthType((AuthType) (authType() | AuthTypeSASLCRAMMD5));

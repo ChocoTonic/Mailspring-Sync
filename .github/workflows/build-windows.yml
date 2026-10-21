@@ -26,7 +26,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '84bab45d415d22042bd0b9081aea57f362da3f35'
+          vcpkgGitCommitId: '03863b71384819cbb223c09f535bbe60a3b3e082'
           # Don't run vcpkg install here - let MSBuild handle it with manifest mode
           runVcpkgInstall: false
           # Disable deprecated x-gha binary caching (was removed from vcpkg)
@@ -38,10 +38,12 @@ jobs:
       # Cache packages installed by MSBuild's vcpkg manifest mode
       # MSBuild with VcpkgEnableManifest=true installs to vcpkg_installed/ next to vcpkg.json
       - name: Restore vcpkg packages cache
+        id: vcpkg-cache
         uses: actions/cache@v6
         with:
           path: vcpkg_installed
           key: vcpkg-msbuild-x86-windows-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlay-ports/**') }}
+          restore-keys: vcpkg-msbuild-x86-windows-
 
       - name: Set commit hash
         shell: pwsh
@@ -63,6 +65,13 @@ jobs:
           cd Windows
           REM VcpkgEnableManifest=true tells MSBuild to install packages from vcpkg.json to vcpkg_installed/
           msbuild.exe mailsync.sln /property:Configuration=Release;Platform=Win32 /p:VcpkgEnableManifest=true
+
+      - name: Preserve installed dependencies after compiler or linker failures
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true' && hashFiles('vcpkg_installed/**/vcpkg/status') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: vcpkg_installed
+          key: vcpkg-msbuild-x86-windows-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlay-ports/**') }}
 
       - name: Copy build artifacts and dependencies
         shell: pwsh
@@ -109,20 +118,13 @@ jobs:
           }
 
           # Verify vcpkg auto-deployed the DLLs - fail if not
-          $testDll = "..\app\dist\icuuc78.dll"
-          if (!(Test-Path $testDll)) {
+          $icuRuntime = Get-ChildItem -LiteralPath "..\app\dist" -Filter "icuuc*.dll" -File
+          if (!$icuRuntime) {
             Write-Host "ERROR: vcpkg did not auto-deploy DLLs to build output!"
-            Write-Host "Expected to find: $testDll"
+            Write-Host "Expected to find an ICU common runtime DLL (icuuc*.dll)"
             Write-Host "Contents of Windows\Release:"
             Get-ChildItem ".\Windows\Release\*" -ErrorAction SilentlyContinue | Select-Object Name
             exit 1
-          }
-
-          # vcpkg's zlib provides zlib1.dll but the import library causes dependents to look for zlib.dll
-          # This is a known vcpkg issue - copy zlib1.dll to zlib.dll as a workaround
-          if (Test-Path "..\app\dist\zlib1.dll") {
-            Copy-Item "..\app\dist\zlib1.dll" "..\app\dist\zlib.dll" -Force
-            Write-Host "Copied zlib1.dll to zlib.dll (vcpkg naming workaround)"
           }
 
       - name: List build artifacts
@@ -138,8 +140,7 @@ jobs:
             "libssl-3.dll",
             "libcurl.dll",
             "libxml2.dll",
-            "zlib1.dll",
-            "zlib.dll",
+            "z.dll",
             "tidy.dll",
             "libctemplate.dll",
             "pthreadVC3.dll",
@@ -169,6 +170,25 @@ jobs:
           REM SASL plugin DLLs (saslPLAIN.dll, etc.) are now in dist alongside other DLLs
           7z -ttar a dummy ..\..\app\dist\*.dll ..\..\app\dist\*.pdb ..\..\app\dist\mailsync.exe -so | 7z -si -tgzip a .\mailsync.tar.gz
 
+      - name: Execute extracted artifact offline
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path extracted-mailspring | Out-Null
+          tar -xzf Windows/mailsync.tar.gz -C extracted-mailspring
+          Push-Location extracted-mailspring
+          try {
+            $executable = Join-Path (Get-Location) mailsync.exe
+            & $executable --help
+            if ($LASTEXITCODE -ne 0) { throw "Extracted mailsync failed: $LASTEXITCODE" }
+            $env:CONFIG_DIR_PATH = Join-Path $env:RUNNER_TEMP mailspring-database
+            $env:IDENTITY_SERVER = "https://unused.invalid"
+            New-Item -ItemType Directory -Force -Path $env:CONFIG_DIR_PATH | Out-Null
+            foreach ($attempt in 1..2) {
+              & $executable --mode migrate
+              if ($LASTEXITCODE -ne 0) { throw "Offline database migration failed: $LASTEXITCODE" }
+            }
+          } finally { Pop-Location }
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -176,7 +196,7 @@ jobs:
           path: Windows/mailsync.tar.gz
 
       - name: Deploy to S3
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && github.repository == 'Foundry376/Mailspring-Sync'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
