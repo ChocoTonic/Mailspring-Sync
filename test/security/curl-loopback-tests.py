@@ -5,10 +5,15 @@ import pathlib
 import ssl
 import subprocess
 import sys
+import tempfile
 import threading
 
-normal, denied, fixture_dir = sys.argv[1:]
-fixtures = pathlib.Path(fixture_dir)
+normal, denied, fixture_dir, openssl = sys.argv[1:]
+temporary = tempfile.TemporaryDirectory(prefix="mailspring-loopback-certificates-")
+fixtures = pathlib.Path(temporary.name)
+generator_environment = dict(os.environ, OPENSSL_EXECUTABLE=openssl)
+subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name("generate-loopback-fixtures.py")),
+                fixture_dir, str(fixtures)], check=True, env=generator_environment)
 requests = []
 
 
@@ -82,3 +87,4 @@ finally:
     for instance in [primary, redirect, plaintext]:
         instance.shutdown()
         instance.server_close()
+    temporary.cleanup()

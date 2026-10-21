@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 project(mailcore_certificate_key_tests LANGUAGES CXX)
 enable_testing()
 add_executable(certificate-key-tests certificate-key-tests.cpp)
@@ -10,6 +10,9 @@ add_test(NAME certificate-key-blocklist
 
 find_package(CURL 7.80 REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+find_program(OPENSSL_EXECUTABLE NAMES openssl
+    HINTS "${OPENSSL_INCLUDE_DIR}/../tools/openssl" "${OPENSSL_INCLUDE_DIR}/../bin"
+    REQUIRED)
 add_executable(platform-certificate-tests platform-certificate-tests.cpp)
 add_executable(curl-security-client curl-security-client.cpp)
 add_executable(curl-security-client-denied curl-security-client.cpp)
@@ -30,5 +33,5 @@ add_test(NAME platform-certificate-policy
 add_test(NAME curl-precredential-key-policy
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/curl-loopback-tests.py"
             "$<TARGET_FILE:curl-security-client>" "$<TARGET_FILE:curl-security-client-denied>"
-            "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+            "${CMAKE_CURRENT_SOURCE_DIR}/fixtures" "${OPENSSL_EXECUTABLE}")
 set_tests_properties(curl-precredential-key-policy PROPERTIES TIMEOUT 180)

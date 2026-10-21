@@ -15,6 +15,12 @@ client-only extended key usage respectively.
 The `curl-*.pem` files are unrelated, test-only localhost TLS certificates and
 two corresponding server private keys. Their CA private key was discarded.
 These keys are public test fixtures, never production credentials. A separate
+loopback setup generates current, 397-day server certificates with those fixed
+keys under a fresh ephemeral CA. The generated CA key is discarded and all
+generated files stay in a temporary directory, so checked-in certificate expiry
+does not affect the live TLS regressions. This uses the OpenSSL CLI and Python's
+standard library without installing a test CA in the operating system store.
+A separate
 test executable adds the localhost server SPKI hash to its compile-time
 blocklist to verify that the real libcurl callback rejects the connection before
 any HTTP headers or test credentials are transmitted. Production builds do not
